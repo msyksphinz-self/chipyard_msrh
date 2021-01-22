@@ -53,14 +53,14 @@ class MSRHCoreBlackbox(
     val i_ic_resp_valid = Input(Bool())
     val i_ic_resp_tag   = Input(UInt(4.W))
     val i_ic_resp_data  = Input(UInt(512.W))
-    val o_ic_resq_ready = Input(Bool())
+    val o_ic_resp_ready = Output(Bool())
   })
 
   // pre-process the verilog to remove "includes" and combine into one file
-  // val make = "make -C generators/MSRH/src/main/resources/vsrc default "
-  // val proc = if (traceportEnabled) make + "EXTRA_PREPROC_DEFINES=FIRESIM_TRACE" else make
-  // require (proc.! == 0, "Failed to run preprocessing step")
+  val make = "make -C generators/msrh/src/main/resources/vsrc default "
+  val proc = make
+  require (proc.! == 0, "Failed to run preprocessing step")
 
   // add wrapper/blackbox after it is pre-processed
-  // addResource("/vsrc/MSRHCoreBlackbox.preprocessed.sv")
+  addResource("/vsrc/MSRHCoreBlackbox.preprocessed.sv")
 }

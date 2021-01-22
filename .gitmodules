@@ -1,0 +1,3 @@
+[submodule "src/main/vsrc/msrh"]
+	path = src/main/resources/vsrc/msrh
+	url = git@msyksphinz-self:msyksphinz-self/msrh.git
