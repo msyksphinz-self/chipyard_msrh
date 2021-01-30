@@ -46,13 +46,13 @@ class MSRHCoreBlackbox(
     val o_ic_req_cmd     = Output(UInt(4.W))
     val o_ic_req_addr    = Output(UInt(39.W))
     val o_ic_req_tag     = Output(UInt(4.W))
-    val o_ic_req_data    = Output(UInt(512.W))
-    val o_ic_req_byte_en = Output(UInt((512/8).W))
+    val o_ic_req_data    = Output(UInt(256.W))
+    val o_ic_req_byte_en = Output(UInt((256/8).W))
     val i_ic_req_ready   = Input(Bool())
 
     val i_ic_resp_valid = Input(Bool())
     val i_ic_resp_tag   = Input(UInt(4.W))
-    val i_ic_resp_data  = Input(UInt(512.W))
+    val i_ic_resp_data  = Input(UInt(256.W))
     val o_ic_resp_ready = Output(Bool())
   })
 

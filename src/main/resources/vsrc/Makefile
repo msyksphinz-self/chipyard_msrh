@@ -14,3 +14,5 @@ SRC_VLOG += ./msrh/src/mrh_tile_wrapper.sv
 
 default:
 	cat $(SRC_VLOG) > MSRHCoreBlackbox.preprocessed.sv
+	ln -sf ../../../../generators/msrh/src/main/resources/vsrc/MSRHCoreBlackbox.preprocessed.sv \
+		../../../../../../sims/verilator/generated-src/chipyard.TestHarness.MSRHConfig/

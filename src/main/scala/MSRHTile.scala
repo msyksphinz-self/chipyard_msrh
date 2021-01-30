@@ -28,7 +28,6 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.interrupts._
 import freechips.rocketchip.util._
 import freechips.rocketchip.tile._
-import freechips.rocketchip.amba.axi4._
 
 case object MSRHTilesKey extends Field[Seq[MSRHTileParams]](Nil)
 
@@ -248,19 +247,33 @@ class MSRHTileModuleImp(outer: MSRHTile) extends BaseTileModuleImp(outer){
     outer.traceSourceNode.bundle map (t => t.valid := false.B)
   // }
 
+  val tl_opcode = Wire(UInt(3.W))
+  tl_opcode := TLMessages.Get
+  switch (core.io.o_ic_req_cmd) {
+    is(0.U) { tl_opcode := TLMessages.Get }
+    is(1.U) { tl_opcode := TLMessages.PutFullData }
+  }
+
+  val beatBytes = p(SystemBusKey).beatBytes
+
   // connect the axi interface
   outer.memTLNode.out foreach { case (out, edgeOut) =>
     out.a.valid        := core.io.o_ic_req_valid
-    out.a.bits.opcode  := core.io.o_ic_req_cmd
+    out.a.bits.opcode  := tl_opcode
     out.a.bits.param   := 0.U
-    out.a.bits.size    := 0.U
+    out.a.bits.size    := log2Ceil(beatBytes).U
     out.a.bits.source  := core.io.o_ic_req_tag
     out.a.bits.address := core.io.o_ic_req_addr
     // out.a.bits.user    := 0.U
     // out.a.bits.echo    := 0.U
-    out.a.bits.mask    := 0.U
+    out.a.bits.mask    := Fill(beatBytes * 8, 1.U(1.W))
     out.a.bits.data    := 0.U
     out.a.bits.corrupt := 0.U
     core.io.i_ic_req_ready     := out.a.ready
+
+    core.io.i_ic_resp_valid := out.d.valid
+    core.io.i_ic_resp_tag := out.d.bits.source
+    core.io.i_ic_resp_data := out.d.bits.data
+    out.d.ready := core.io.o_ic_resp_ready
   }
 }

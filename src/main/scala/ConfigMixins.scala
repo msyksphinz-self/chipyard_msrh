@@ -56,7 +56,7 @@ class WithNMSRHCores(n: Int) extends Config(
  * Setup default MSRH parameters.
  */
 class WithNormalMSRHSys extends Config((site, here, up) => {
-  case SystemBusKey => up(SystemBusKey, site).copy(beatBytes = 8)
+  case SystemBusKey => up(SystemBusKey, site).copy(beatBytes = 32)
   case XLen => 64
   case MaxHartIdBits => log2Up(site(MSRHTilesKey).size)
 })
