@@ -216,7 +216,7 @@ class MSRHTileModuleImp(outer: MSRHTile) extends BaseTileModuleImp(outer){
   val traceInstSz = (new freechips.rocketchip.rocket.TracedInstruction).getWidth + 2
 
   // connect the MSRH core
-  val core = Module(new MSRHCoreBlackbox(
+  val core = Module(new msrh_tile_wrapper(
     // general core params
     xLen = p(XLen),
   ))
