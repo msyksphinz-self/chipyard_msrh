@@ -61,7 +61,7 @@ class msrh_tile_wrapper(
     val o_l1d_req_addr    = Output(UInt(39.W))
     val o_l1d_req_tag     = Output(UInt(4.W))
     val o_l1d_req_data    = Output(UInt(256.W))
-    val o_l1d_req_byte_en = Output(UInt((256/8).W)
+    val o_l1d_req_byte_en = Output(UInt((256/8).W))
     val i_l1d_req_ready   = Input(Bool())
 
     val i_l1d_resp_valid = Input(Bool())
@@ -75,14 +75,21 @@ class msrh_tile_wrapper(
     val o_ptw_req_addr    = Output(UInt(39.W))
     val o_ptw_req_tag     = Output(UInt(4.W))
     val o_ptw_req_data    = Output(UInt(256.W))
-    val o_ptw_req_byte_en = Output(UInt((256/8).W)
+    val o_ptw_req_byte_en = Output(UInt((256/8).W))
     val i_ptw_req_ready   = Input(Bool())
 
     val i_ptw_resp_valid = Input(Bool())
     val i_ptw_resp_tag   = Input(UInt(4.W))
     val i_ptw_resp_data  = Input(UInt(256.W))
     val o_ptw_resp_ready = Output(Bool())
-    })
+
+    val i_snoop_req_valid = Input(Bool())
+    val i_snoop_req_paddr = Input(UInt(39.W))
+
+    val o_snoop_resp_valid = Output(Bool())
+    val o_snoop_resp_data  = Output(UInt(256.W))
+    val o_snoop_resp_be    = Output(UInt((256/8).W))
+  })
 
   // pre-process the verilog to remove "includes" and combine into one file
   val make = "make -C generators/msrh/src/main/resources/vsrc default "
