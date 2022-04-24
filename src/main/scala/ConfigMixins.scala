@@ -9,20 +9,11 @@ import chisel3._
 import chisel3.util.{log2Up}
 
 import freechips.rocketchip.config.{Parameters, Config, Field}
-import freechips.rocketchip.subsystem.{SystemBusKey, RocketTilesKey, RocketCrossingParams}
+import freechips.rocketchip.subsystem._
 import freechips.rocketchip.devices.tilelink.{BootROMParams}
 import freechips.rocketchip.diplomacy.{SynchronousCrossing, AsynchronousCrossing, RationalCrossing}
 import freechips.rocketchip.rocket._
 import freechips.rocketchip.tile._
-
-case object MSRHCrossingKey extends Field[Seq[RocketCrossingParams]](List(RocketCrossingParams()))
-
-/**
- * Enable trace port
- */
-class WithMSRHEnableTrace extends Config((site, here, up) => {
-  case MSRHTilesKey => up(MSRHTilesKey) map (tile => tile.copy(trace = true))
-})
 
 /**
  * Makes cacheable region include to/from host addresses.
@@ -30,10 +21,10 @@ class WithMSRHEnableTrace extends Config((site, here, up) => {
  * to/fromhost communication unless those lines are evicted from L1.
  */
 class WithToFromHostCaching extends Config((site, here, up) => {
-  case MSRHTilesKey => up(MSRHTilesKey, site) map { a =>
-    a.copy(core = a.core.copy(
+  case TilesLocated(InSubsystem) => up(TilesLocated(InSubsystem), site) map {
+    case tp: MSRHTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(core = tp.tileParams.core.copy(
       enableToFromHostCaching = true
-    ))
+    )))
   }
 })
 
@@ -43,20 +34,17 @@ class WithToFromHostCaching extends Config((site, here, up) => {
  *
  * @param n amount of tiles to duplicate
  */
-class WithNMSRHCores(n: Int) extends Config(
-  new WithNormalMSRHSys ++
-  new Config((site, here, up) => {
-    case MSRHTilesKey => {
-      List.tabulate(n)(i => MSRHTileParams(hartId = i))
-    }
-  })
-)
-
-/**
- * Setup default MSRH parameters.
- */
-class WithNormalMSRHSys extends Config((site, here, up) => {
-  case SystemBusKey => up(SystemBusKey, site).copy(beatBytes = 32)
+class WithNMSRHCores(n: Int = 1, overrideIdOffset: Option[Int] = None) extends Config((site, here, up) => {
+  case TilesLocated(InSubsystem) => {
+    val prev = up(TilesLocated(InSubsystem), site)
+    val idOffset = overrideIdOffset.getOrElse(prev.size)
+    (0 until n).map { i =>
+      MSRHTileAttachParams(
+        tileParams = MSRHTileParams(hartId = i + idOffset),
+        crossingParams = RocketCrossingParams()
+      )
+    } ++ prev
+  }
+  case SystemBusKey => up(SystemBusKey, site).copy(beatBytes = 16)
   case XLen => 64
-  case MaxHartIdBits => log2Up(site(MSRHTilesKey).size)
 })

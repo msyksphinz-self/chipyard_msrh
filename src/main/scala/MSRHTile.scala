@@ -28,6 +28,8 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.interrupts._
 import freechips.rocketchip.util._
 import freechips.rocketchip.tile._
+import freechips.rocketchip.amba.axi4._
+import freechips.rocketchip.prci.ClockSinkParameters
 
 case object MSRHTilesKey extends Field[Seq[MSRHTileParams]](Nil)
 
@@ -36,10 +38,12 @@ case class MSRHCoreParams(
   rasEntries: Int = 4,
   btbEntries: Int = 16,
   bhtEntries: Int = 16,
+  pmpEntries: Int = 4,
   enableToFromHostCaching: Boolean = false,
 ) extends CoreParams {
   /* DO NOT CHANGE BELOW THIS */
   val useVM: Boolean = true
+  val useHypervisor: Boolean = false
   val useUser: Boolean = true
   val useSupervisor: Boolean = false
   val useDebug: Boolean = true
@@ -52,45 +56,62 @@ case class MSRHCoreParams(
   val mulDiv: Option[MulDivParams] = Some(MulDivParams()) // copied from Rocket
   val fpu: Option[FPUParams] = Some(FPUParams()) // copied fma latencies from Rocket
   val nLocalInterrupts: Int = 0
+  val useNMI: Boolean = false
   val nPMPs: Int = 0 // TODO: Check
   val pmpGranularity: Int = 4 // copied from Rocket
   val nBreakpoints: Int = 0 // TODO: Check
   val useBPWatch: Boolean = false
+  val mcontextWidth: Int = 0 // TODO: Check
+  val scontextWidth: Int = 0 // TODO: Check
   val nPerfCounters: Int = 29
   val haveBasicCounters: Boolean = true
   val haveFSDirty: Boolean = false
   val misaWritable: Boolean = false
   val haveCFlush: Boolean = false
   val nL2TLBEntries: Int = 512 // copied from Rocket
+  val nL2TLBWays: Int = 1
   val mtvecInit: Option[BigInt] = Some(BigInt(0)) // copied from Rocket
   val mtvecWritable: Boolean = true // copied from Rocket
   val instBits: Int = if (useCompressed) 16 else 32
   val lrscCycles: Int = 80 // copied from Rocket
   val decodeWidth: Int = 1 // TODO: Check
-  val fetchWidth: Int = 1 // TODO: Check
-  val retireWidth: Int = 2
+  val fetchWidth: Int = 8 // TODO: Check
+  val retireWidth: Int = 4
+  val nPTECacheEntries: Int = 8 // TODO: Check
 }
 
-// TODO: BTBParams, DCacheParams, ICacheParams are incorrect in DTB... figure out defaults in MSRH and put in DTB
-case class MSRHTileParams(
-  name: Option[String] = Some("MSRH_tile"),
-  hartId: Int = 0,
-  beuAddr: Option[BigInt] = None,
-  blockerCtrlAddr: Option[BigInt] = None,
-  btb: Option[BTBParams] = Some(BTBParams()),
-  core: MSRHCoreParams = MSRHCoreParams(),
-  dcache: Option[DCacheParams] = Some(DCacheParams()),
-  icache: Option[ICacheParams] = Some(ICacheParams()),
-  boundaryBuffers: Boolean = false,
-  trace: Boolean = false
-  ) extends TileParams
+case class MSRHTileAttachParams(
+  tileParams: MSRHTileParams,
+  crossingParams: RocketCrossingParams
+) extends CanAttachTile {
+  type TileType = MSRHTile
+  val lookup = PriorityMuxHartIdFromSeq(Seq(tileParams))
+}
 
-class MSRHTile(
+case class MSRHTileParams(
+  name: Option[String] = Some("msrh_tile"),
+  hartId: Int = 0,
+  trace: Boolean = false,
+  val core: MSRHCoreParams = MSRHCoreParams()
+) extends InstantiableTileParams[MSRHTile]
+{
+  val beuAddr: Option[BigInt] = None
+  val blockerCtrlAddr: Option[BigInt] = None
+  val btb: Option[BTBParams] = Some(BTBParams())
+  val boundaryBuffers: Boolean = false
+  val dcache: Option[DCacheParams] = Some(DCacheParams())
+  val icache: Option[ICacheParams] = Some(ICacheParams())
+  val clockSinkParams: ClockSinkParameters = ClockSinkParameters()
+  def instantiate(crossing: TileCrossingParamsLike, lookup: LookupByHartIdImpl)(implicit p: Parameters): MSRHTile = {
+    new MSRHTile(this, crossing, lookup)
+  }
+}
+
+class MSRHTile private(
   val MSRHParams: MSRHTileParams,
   crossing: ClockCrossingType,
   lookup: LookupByHartIdImpl,
-  q: Parameters,
-  logicalTreeNode: LogicalTreeNode)
+  q: Parameters)
   extends BaseTile(MSRHParams, crossing, lookup, q)
   with SinksExternalInterrupts
   with SourcesExternalNotifications
@@ -99,8 +120,8 @@ class MSRHTile(
    * Setup parameters:
    * Private constructor ensures altered LazyModule.p is used implicitly
    */
-  def this(params: MSRHTileParams, crossing: RocketCrossingParams, lookup: LookupByHartIdImpl, logicalTreeNode: LogicalTreeNode)(implicit p: Parameters) =
-    this(params, crossing.crossingType, lookup, p, logicalTreeNode)
+  def this(params: MSRHTileParams, crossing: TileCrossingParamsLike, lookup: LookupByHartIdImpl)(implicit p: Parameters) =
+    this(params, crossing.crossingType, lookup, p)
 
   val intOutwardNode = IntIdentityNode()
   val slaveNode = TLIdentityNode()
@@ -125,14 +146,18 @@ class MSRHTile(
     Resource(cpuDevice, "reg").bind(ResourceAddress(hartId))
   }
 
-  override def makeMasterBoundaryBuffers(implicit p: Parameters) = {
-    if (!MSRHParams.boundaryBuffers) super.makeMasterBoundaryBuffers
-    else TLBuffer(BufferParams.none, BufferParams.flow, BufferParams.none, BufferParams.flow, BufferParams(1))
+ override def makeMasterBoundaryBuffers(crossing: ClockCrossingType)(implicit p: Parameters) = crossing match {
+    case _: RationalCrossing =>
+      if (!MSRHParams.boundaryBuffers) TLBuffer(BufferParams.none)
+      else TLBuffer(BufferParams.none, BufferParams.flow, BufferParams.none, BufferParams.flow, BufferParams(1))
+    case _ => TLBuffer(BufferParams.none)
   }
 
-  override def makeSlaveBoundaryBuffers(implicit p: Parameters) = {
-    if (!MSRHParams.boundaryBuffers) super.makeSlaveBoundaryBuffers
-    else TLBuffer(BufferParams.flow, BufferParams.none, BufferParams.none, BufferParams.none, BufferParams.none)
+  override def makeSlaveBoundaryBuffers(crossing: ClockCrossingType)(implicit p: Parameters) = crossing match {
+    case _: RationalCrossing =>
+      if (!MSRHParams.boundaryBuffers) TLBuffer(BufferParams.none)
+      else TLBuffer(BufferParams.flow, BufferParams.none, BufferParams.none, BufferParams.none, BufferParams.none)
+    case _ => TLBuffer(BufferParams.none)
   }
 
   override lazy val module = new MSRHTileModuleImp(this)
@@ -192,8 +217,9 @@ class MSRHTileModuleImp(outer: MSRHTile) extends BaseTileModuleImp(outer){
   val fromhostAddr = BigInt(0x80001040L) // CONSTANT: based on default sw (assume within extMem region)
 
   // have the main memory, bootrom, debug regions be executable
-  val executeRegionBases = Seq(p(ExtMem).get.master.base,      p(BootROMParams).address, debugBaseAddr, BigInt(0x0), BigInt(0x0))
-  val executeRegionSzs   = Seq(p(ExtMem).get.master.size, BigInt(p(BootROMParams).size),       debugSz, BigInt(0x0), BigInt(0x0))
+  val bootromParams = p(BootROMLocated(InSubsystem)).get
+  val executeRegionBases = Seq(p(ExtMem).get.master.base,      bootromParams.address, debugBaseAddr, BigInt(0x0), BigInt(0x0))
+  val executeRegionSzs   = Seq(p(ExtMem).get.master.size, BigInt(bootromParams.size),       debugSz, BigInt(0x0), BigInt(0x0))
   val executeRegionCnt   = executeRegionBases.length
 
   // have the main memory be cached, but don't cache tohost/fromhost addresses
@@ -266,14 +292,14 @@ class MSRHTileModuleImp(outer: MSRHTile) extends BaseTileModuleImp(outer){
     out.a.bits.address := core.io.o_ic_req_addr
     // out.a.bits.user    := 0.U
     // out.a.bits.echo    := 0.U
-    out.a.bits.mask    := Fill(beatBytes * 8, 1.U(1.W))
-    out.a.bits.data    := 0.U
-    out.a.bits.corrupt := 0.U
-    core.io.i_ic_req_ready     := out.a.ready
+    out.a.bits.mask        := Fill(beatBytes * 8, 1.U(1.W))
+    out.a.bits.data        := 0.U
+    out.a.bits.corrupt     := 0.U
+    core.io.i_ic_req_ready := out.a.ready
 
     core.io.i_ic_resp_valid := out.d.valid
-    core.io.i_ic_resp_tag := out.d.bits.source
-    core.io.i_ic_resp_data := out.d.bits.data
+    core.io.i_ic_resp_tag   := out.d.bits.source
+    core.io.i_ic_resp_data  := out.d.bits.data
     out.d.ready := core.io.o_ic_resp_ready
   }
 }
